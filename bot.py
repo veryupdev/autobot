@@ -1,7 +1,8 @@
 import asyncio
 import random
 import string
-from aiohttp import ClientSession
+import aiohttp
+from aiohttp import ClientSession, TCPConnector, ClientTimeout
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -19,6 +20,9 @@ watch = set()
 
 V = set("aeiou")
 GOOD = {"alpha","bravo","delta","ghost","north","raven","storm","vodka","laser","ninja","tiger","onion","mango","blaze","frost","crown","royal","queen","kings","piano","ocean","light","prime","viper","lemon","amber","ivory","pearl","noble","eagle","wolfs","brave"}
+
+def new_session():
+    return ClientSession(headers=UA, connector=TCPConnector(ssl=False), timeout=ClientTimeout(total=15))
 
 def make(use_digits):
     head = random.choice(string.ascii_lowercase)
@@ -75,16 +79,16 @@ def stopkb():
 
 async def is_free(session, u):
     try:
-        async with session.get(f"{{https://t.me/{u}}}", timeout=10) as r:
+        async with session.get(f"{{https://t.me/{u}}}", allow_redirects=True) as r:
             html = await r.text()
     except Exception:
         return None
     return "tgme_page_title" not in html
 
 async def hunt(chat_id, use_digits, status_id):
-    checked = found = 0
+    checked = found = fails = 0
     seen = set()
-    async with ClientSession(headers=UA) as session:
+    async with new_session() as session:
         while active.get(chat_id):
             u = make(use_digits)
             if u in seen:
@@ -92,13 +96,15 @@ async def hunt(chat_id, use_digits, status_id):
             seen.add(u)
             res = await is_free(session, u)
             checked += 1
-            if res:
+            if res is None:
+                fails += 1
+            elif res:
                 p, why = rarity(u)
                 found += 1
                 await bot.send_message(chat_id, f"🟢 @{u}\n{p}/100 — {tier(p)} · {why}")
             if checked % 8 == 0:
                 try:
-                    await bot.edit_message_text(f"🔎 проверено: {checked} · найдено: {found}", chat_id, status_id, reply_markup=stopkb())
+                    await bot.edit_message_text(f"🔎 проверено: {checked} · найдено: {found} · ошибок: {fails}", chat_id, status_id, reply_markup=stopkb())
                 except Exception:
                     pass
             await asyncio.sleep(0.5)
@@ -109,7 +115,7 @@ async def hunt(chat_id, use_digits, status_id):
         pass
 
 async def watcher():
-    async with ClientSession(headers=UA) as session:
+    async with new_session() as session:
         while True:
             for u in list(watch):
                 if await is_free(session, u):
@@ -136,15 +142,17 @@ async def check(m: Message):
     if len(parts) < 2:
         await m.answer("формат: /check имя"); return
     name = parts[1].lstrip("@").lower()
-    async with ClientSession(headers=UA) as session:
-        res = await is_free(session, name)
-    if res is None:
-        await m.answer("не смог проверить (таймаут/блок)")
-    elif res:
-        p, why = rarity(name)
-        await m.answer(f"🟢 @{name} свободен · {p}/100 — {tier(p)} · {why}")
-    else:
-        await m.answer(f"🔴 @{name} занят")
+    try:
+        async with new_session() as s:
+            async with s.get(f"{{https://t.me/{name}}}", allow_redirects=True) as r:
+                html = await r.text()
+        if "tgme_page_title" not in html:
+            p, why = rarity(name)
+            await m.answer(f"🟢 @{name} свободен · {p}/100 — {tier(p)} · {why}")
+        else:
+            await m.answer(f"🔴 @{name} занят")
+    except Exception as e:
+        await m.answer(f"ошибка: {type(e).__name__}: {e}")
 
 @dp.message(Command("watch"))
 async def w(m: Message):
