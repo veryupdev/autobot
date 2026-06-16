@@ -2,14 +2,15 @@ import asyncio
 import random
 import string
 from aiohttp import ClientSession
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = "8931382600:AAEOWYJGOC9mtYoIssNOX-AyV49fg6TZm6Q"
 OWNER = 8048285990
-ALLOWED = {OWNER, 111111111, 222222222}
-RUDE = ["иди нахуй", "не для тебя бот, вали", "тебя сюда не звали", "соси, доступа нет"]
+ALLOWED = {OWNER, 7209594427}
+RUDE = ["иди нахуй", "не для тебя бот, вали", "тебя сюда не звали", "доступа нет, соси"]
+UA = {"User-Agent": "Mozilla/5.0"}
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
@@ -17,57 +18,39 @@ active = {}
 watch = set()
 
 V = set("aeiou")
-GOOD = {"alpha","bravo","delta","ghost","north","raven","storm","vodka","laser","ninja","tiger","onion","mango","blaze","frost","crown","royal","czars","queen","kings","piano","ocean","light","prime","viper","lemon","amber","ivory","pearl","ruby","noble"}
+GOOD = {"alpha","bravo","delta","ghost","north","raven","storm","vodka","laser","ninja","tiger","onion","mango","blaze","frost","crown","royal","queen","kings","piano","ocean","light","prime","viper","lemon","amber","ivory","pearl","noble","eagle","wolfs","brave"}
 
 def make(use_digits):
     head = random.choice(string.ascii_lowercase)
     pool = string.ascii_lowercase + (string.digits if use_digits else "")
     return head + "".join(random.choice(pool) for _ in range(4))
 
-def clusters(u, group):
-    best = cur = 0
-    for c in u:
-        cur = cur + 1 if (c in group) == True else cur
-        if (c in V) if group is V else (c not in V):
-            cur += 0
-    return best
-
 def rarity(u):
     digits = sum(c.isdigit() for c in u)
     if digits:
-        base = 22 - digits * 6
-        if u[0].isdigit():
-            base -= 5
-        return max(1, base), "🗑 с цифрами — слабо"
+        return max(1, 22 - digits * 6), "🗑 с цифрами — слабо"
     pts = 46
     why = "буквенный"
-    flow = sum(1 for i in range(1, len(u)) if (u[i] in V) != (u[i - 1] in V))
-    cons_run = 0
-    run = 0
+    flow = sum(1 for i in range(1, 5) if (u[i] in V) != (u[i - 1] in V))
+    run = best = 0
     for c in u:
         run = run + 1 if c not in V else 0
-        cons_run = max(cons_run, run)
+        best = max(best, run)
     if u in GOOD:
-        pts += 34
-        why = "💠 реальное слово"
+        pts += 34; why = "💠 реальное слово"
     elif flow >= 4:
-        pts += 17
-        why = "произносимый"
-    if cons_run >= 4:
+        pts += 17; why = "произносимый"
+    if best >= 4:
         pts -= 14
     if len(set(u)) == 1:
-        pts += 40
-        why = "👑 один символ ×5"
+        pts += 40; why = "👑 один символ ×5"
     elif len(set(u)) == 2:
-        pts += 24
-        why = "редкий паттерн"
+        pts += 24; why = "редкий паттерн"
     codes = [ord(c) for c in u]
     if all(codes[i] - codes[i - 1] == 1 for i in range(1, 5)) or all(codes[i - 1] - codes[i] == 1 for i in range(1, 5)):
-        pts += 26
-        why = "📈 последовательность"
+        pts += 26; why = "📈 последовательность"
     if u == u[::-1]:
-        pts += 16
-        why = "палиндром"
+        pts += 16; why = "палиндром"
     if any(u[i] == u[i + 1] for i in range(4)):
         pts += 5
     return max(1, min(100, pts)), why
@@ -81,6 +64,15 @@ def tier(p):
         return "✨ норм"
     return "обычный"
 
+def menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔤 Только буквы", callback_data="clean")],
+        [InlineKeyboardButton(text="🔢 Буквы + цифры", callback_data="mixed")],
+    ])
+
+def stopkb():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⏹ Стоп", callback_data="stop")]])
+
 async def is_free(session, u):
     try:
         async with session.get(f"{{https://t.me/{u}}}", timeout=10) as r:
@@ -91,21 +83,34 @@ async def is_free(session, u):
         return False
     return True
 
-async def hunt(chat_id, use_digits):
-    async with ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
-        seen = set()
+async def hunt(chat_id, use_digits, status_id):
+    checked = found = 0
+    seen = set()
+    async with ClientSession(headers=UA) as session:
         while active.get(chat_id):
             u = make(use_digits)
             if u in seen:
                 continue
             seen.add(u)
-            if await is_free(session, u):
+            res = await is_free(session, u)
+            checked += 1
+            if res:
                 p, why = rarity(u)
+                found += 1
                 await bot.send_message(chat_id, f"@{u}\n{p}/100 — {tier(p)} · {why}")
-            await asyncio.sleep(1.2)
+            if checked % 15 == 0:
+                try:
+                    await bot.edit_message_text(f"🔎 проверено: {checked} · найдено: {found}", chat_id, status_id, reply_markup=stopkb())
+                except Exception:
+                    pass
+            await asyncio.sleep(0.7)
+    try:
+        await bot.edit_message_text(f"⏹ стоп · проверено {checked} · найдено {found}", chat_id, status_id, reply_markup=menu())
+    except Exception:
+        pass
 
 async def watcher():
-    async with ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
+    async with ClientSession(headers=UA) as session:
         while True:
             for u in list(watch):
                 if await is_free(session, u):
@@ -115,39 +120,18 @@ async def watcher():
                 await asyncio.sleep(2)
             await asyncio.sleep(15)
 
-def gate(m):
-    return m.from_user.id in ALLOWED
+def ok(uid):
+    return uid in ALLOWED
 
 @dp.message(Command("start"))
 async def start(m: Message):
-    if not gate(m):
-        await m.answer(random.choice(RUDE))
-        return
-    await m.answer("/hunt — буквы+цифры\n/clean — только буквы\n/watch юз — следить\n/stop — стоп")
-
-@dp.message(Command("hunt"))
-async def h1(m: Message):
-    if not gate(m):
+    if not ok(m.from_user.id):
         await m.answer(random.choice(RUDE)); return
-    if active.get(m.chat.id):
-        await m.answer("уже идёт"); return
-    active[m.chat.id] = True
-    await m.answer("ищу...")
-    asyncio.create_task(hunt(m.chat.id, True))
-
-@dp.message(Command("clean"))
-async def h2(m: Message):
-    if not gate(m):
-        await m.answer(random.choice(RUDE)); return
-    if active.get(m.chat.id):
-        await m.answer("уже идёт"); return
-    active[m.chat.id] = True
-    await m.answer("ищу чисто буквенные...")
-    asyncio.create_task(hunt(m.chat.id, False))
+    await m.answer("Выбери режим поиска свободных пятизнаков 👇", reply_markup=menu())
 
 @dp.message(Command("watch"))
 async def w(m: Message):
-    if not gate(m):
+    if not ok(m.from_user.id):
         await m.answer(random.choice(RUDE)); return
     parts = m.text.split()
     if len(parts) < 2:
@@ -155,16 +139,27 @@ async def w(m: Message):
     watch.add(parts[1].lstrip("@").lower())
     await m.answer(f"слежу за @{parts[1].lstrip('@')}, скину как освободится")
 
-@dp.message(Command("stop"))
-async def stop(m: Message):
-    if not gate(m):
-        await m.answer(random.choice(RUDE)); return
-    active[m.chat.id] = False
-    await m.answer("стоп")
+@dp.callback_query(F.data.in_({"clean", "mixed"}))
+async def go(c: CallbackQuery):
+    if not ok(c.from_user.id):
+        await c.answer(random.choice(RUDE), show_alert=True); return
+    if active.get(c.message.chat.id):
+        await c.answer("уже идёт"); return
+    active[c.message.chat.id] = True
+    await c.message.edit_text("🔎 запускаю поиск...", reply_markup=stopkb())
+    asyncio.create_task(hunt(c.message.chat.id, c.data == "mixed", c.message.message_id))
+    await c.answer("поехали")
+
+@dp.callback_query(F.data == "stop")
+async def stop(c: CallbackQuery):
+    if not ok(c.from_user.id):
+        await c.answer(random.choice(RUDE), show_alert=True); return
+    active[c.message.chat.id] = False
+    await c.answer("останавливаю")
 
 @dp.message()
 async def other(m: Message):
-    if not gate(m):
+    if not ok(m.from_user.id):
         await m.answer(random.choice(RUDE))
 
 async def main():
