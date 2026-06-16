@@ -58,46 +58,81 @@ def rarity(u):
     uniq = len(set(u))
     counts = sorted(Counter(u).values(), reverse=True)
     palin = u == u[::-1]
-    seq = digits == 0 and len(u) == 5 and (all(ord(u[i]) - ord(u[i - 1]) == 1 for i in range(1, 5)) or all(ord(u[i - 1]) - ord(u[i]) == 1 for i in range(1, 5)))
+    codes = [ord(c) for c in u]
+    asc = all(codes[i] - codes[i - 1] == 1 for i in range(1, 5))
+    desc = all(codes[i - 1] - codes[i] == 1 for i in range(1, 5))
     if uniq == 1:
         return 100, "👑 один символ ×5"
-    if seq:
-        return 96, "📈 последовательность"
+    if digits == 0 and (asc or desc):
+        return 97, "📈 алфавитная последовательность"
     if digits == 0 and u in WORDS:
-        return (95 if palin else 90), "💠 слово из словаря"
-    if digits:
-        return max(1, 26 - digits * 6), "🗑 с цифрами"
-    s = 32
-    why = "буквенный"
-    if counts[0] >= 4:
-        s = 84; why = "🔥 4 одинаковых"
-    elif uniq == 2:
-        s = 76; why = "🔁 всего 2 символа"
-    elif palin:
-        s = 72; why = "↔️ палиндром"
-    elif uniq == 3:
-        s = 56; why = "повторы"
-    flow = sum(1 for i in range(1, 5) if (u[i] in V) != (u[i - 1] in V))
-    if flow >= 4 and s < 65:
-        s += 18; why = "произносимый"
-    run = best = 0
-    for c in u:
-        run = run + 1 if c not in V else 0
-        best = max(best, run)
-    if best >= 4:
-        s -= 12
-    return max(1, min(100, s)), why
+        return (96 if palin else 92), "💠 настоящее слово"
+    if digits == 0:
+        if uniq == 2 and u[0] == u[2] == u[4] and u[1] == u[3]:
+            return 90, "🔷 паттерн ABABA"
+        if counts[0] == 4:
+            return 88, "🔥 четыре одинаковых"
+        if uniq == 2:
+            return 84, "🔁 всего две буквы"
+        if palin:
+            return 80, "↔️ палиндром"
+        if counts[0] == 3:
+            return 74, "♟ тройной повтор"
+        base = 40
+        why = "буквенный"
+        if u[0] == u[4]:
+            base = 58; why = "🪞 одинаковые края"
+        flow = sum(1 for i in range(1, 5) if (u[i] in V) != (u[i - 1] in V))
+        if flow >= 4:
+            base += 16; why = "🗣 произносимый"
+        if any(u[i] == u[i + 1] for i in range(4)):
+            base += 7; why = "сдвоенная буква"
+        if uniq == 3:
+            base += 8
+        run = best = 0
+        for c in u:
+            run = run + 1 if c not in V else 0
+            best = max(best, run)
+        if best >= 4:
+            base -= 14
+        return max(1, min(89, base)), why
+    base = 30 - digits * 6
+    if not u[0].isdigit():
+        base += 3
+    return max(1, base), "🗗 с цифрами"
 
 def tier(p):
     if p >= 90:
-        return "🏆 ЛЕГЕНДА"
+        return "ЛЕГЕНДА"
     if p >= 75:
-        return "🔥 топ"
+        return "ТОП"
     if p >= 60:
-        return "💎 редкий"
+        return "редкий"
     if p >= 45:
-        return "✨ норм"
+        return "норм"
     return "обычный"
+
+def card(u, p, why, nft=False):
+    url = HOST + "/" + u
+    tag = "💜 NFT (Fragment, платно)\n\n" if nft else ""
+    if p >= 90:
+        return (tag +
+                "🏆━━━━━━━━━━━━🏆\n"
+                "      <b>✨ ЛЕГЕНДА ✨</b>\n"
+                "🏆━━━━━━━━━━━━🏆\n\n"
+                f"<b>@{u}</b>\n"
+                f"💯 <b>{p}/100</b> · {why}\n"
+                f"🔗 {url}")
+    if p >= 75:
+        return (tag +
+                "🔥🔥🔥 <b>ТОП</b> 🔥🔥🔥\n\n"
+                f"<b>@{u}</b>\n"
+                f"⭐ <b>{p}/100</b> · {why}\n"
+                f"🔗 {url}")
+    return (tag +
+            f"💎 <b>@{u}</b> — редкий\n"
+            f"{p}/100 · {why}\n"
+            f"🔗 {url}")
 
 def menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -129,6 +164,12 @@ async def is_nft(session, u):
     title = low.split("<title>", 1)[1].split("</title>", 1)[0].strip()
     return title.startswith(u.lower() + " ")
 
+async def set_status(chat_id, status_id, text, kb):
+    try:
+        await bot.edit_message_text(text=text, chat_id=chat_id, message_id=status_id, reply_markup=kb)
+    except Exception:
+        pass
+
 async def hunt(chat_id, mode, status_id):
     checked = found = nftc = fails = 0
     seen = set()
@@ -159,24 +200,18 @@ async def hunt(chat_id, mode, status_id):
                         nft = await is_nft(session, u)
                         if nft is True:
                             nftc += 1
-                            await bot.send_message(chat_id, f"💜 @{u} — NFT (Fragment, платно)\n{p}/100 · {why}")
+                            await bot.send_message(chat_id, card(u, p, why, nft=True), parse_mode="HTML")
                         else:
                             found += 1
-                            await bot.send_message(chat_id, f"🏆 @{u} свободен\n{p}/100 — {tier(p)} · {why}")
-                if checked == 1 or checked % 5 == 0:
-                    try:
-                        await bot.edit_message_text(f"🔎 проверено: {checked} · 🏆 {found} · 💜 {nftc} · ошибок: {fails}", chat_id, status_id, reply_markup=stopkb())
-                    except Exception:
-                        pass
+                            await bot.send_message(chat_id, card(u, p, why), parse_mode="HTML")
+                if checked == 1 or checked % 4 == 0:
+                    await set_status(chat_id, status_id, f"🔎 проверено: {checked} · 🏆 {found} · 💜 {nftc} · ошибок: {fails}", stopkb())
                 await asyncio.sleep(0.6)
             except Exception:
                 fails += 1
                 await asyncio.sleep(0.6)
     active[chat_id] = False
-    try:
-        await bot.edit_message_text(f"⏹ стоп · проверено {checked} · 🏆 {found} · 💜 {nftc}", chat_id, status_id, reply_markup=menu())
-    except Exception:
-        pass
+    await set_status(chat_id, status_id, f"⏹ стоп · проверено {checked} · 🏆 {found} · 💜 {nftc}", menu())
 
 async def watcher():
     async with new_session() as session:
@@ -185,7 +220,7 @@ async def watcher():
                 if await is_free(session, u):
                     watch.discard(u)
                     p, why = rarity(u)
-                    await bot.send_message(OWNER, f"🟢 освободился @{u}\n{p}/100 — {tier(p)} · {why}")
+                    await bot.send_message(OWNER, "🟢 ОСВОБОДИЛСЯ\n\n" + card(u, p, why), parse_mode="HTML")
                 await asyncio.sleep(2)
             await asyncio.sleep(15)
 
@@ -214,10 +249,7 @@ async def check(m: Message):
             await m.answer(f"🔴 @{name} занят"); return
         nft = await is_nft(s, name)
     p, why = rarity(name)
-    if nft:
-        await m.answer(f"💜 @{name} — NFT на Fragment (только платно)\n{p}/100 · {why}")
-    else:
-        await m.answer(f"🏆 @{name} свободен, можно занять\n{p}/100 — {tier(p)} · {why}")
+    await m.answer(card(name, p, why, nft=bool(nft)), parse_mode="HTML")
 
 @dp.message(Command("watch"))
 async def w(m: Message):
