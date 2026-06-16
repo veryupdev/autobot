@@ -12,7 +12,7 @@ OWNER = 8048285990
 ALLOWED = {OWNER, 7209594427}
 RUDE = ["иди нахуй", "не для тебя бот, вали", "тебя сюда не звали", "доступа нет, соси"]
 UA = {"User-Agent": "Mozilla/5.0"}
-MIN_SCORE = 65
+MIN_SCORE = 60
 
 HOST = "t.me"
 FRAG_HOST = "fragment.com"
@@ -58,7 +58,7 @@ def rarity(u):
     uniq = len(set(u))
     counts = sorted(Counter(u).values(), reverse=True)
     palin = u == u[::-1]
-    seq = digits == 0 and (all(ord(u[i]) - ord(u[i - 1]) == 1 for i in range(1, 5)) or all(ord(u[i - 1]) - ord(u[i]) == 1 for i in range(1, 5)))
+    seq = digits == 0 and len(u) == 5 and (all(ord(u[i]) - ord(u[i - 1]) == 1 for i in range(1, 5)) or all(ord(u[i - 1]) - ord(u[i]) == 1 for i in range(1, 5)))
     if uniq == 1:
         return 100, "👑 один символ ×5"
     if seq:
@@ -120,13 +120,14 @@ async def is_free(session, u):
 async def is_nft(session, u):
     try:
         async with session.get(frag(u), allow_redirects=True) as r:
-            html = (await r.text()).lower()
+            html = await r.text()
     except Exception:
         return None
-    for k in ("place bid", "minimum bid", "highest bid", "on auction", "purchased on", "for auction"):
-        if k in html:
-            return True
-    return False
+    low = html.lower()
+    if "<title>" not in low:
+        return False
+    title = low.split("<title>", 1)[1].split("</title>", 1)[0].strip()
+    return title.startswith(u.lower() + " ")
 
 async def hunt(chat_id, mode, status_id):
     checked = found = nftc = fails = 0
@@ -138,35 +139,39 @@ async def hunt(chat_id, mode, status_id):
         it = iter(pool)
     async with new_session() as session:
         while active.get(chat_id):
-            if mode == "words":
-                u = next(it, None)
-                if u is None:
-                    break
-            else:
-                u = make(mode == "mixed")
-                if u in seen:
-                    continue
-                seen.add(u)
-            res = await is_free(session, u)
-            checked += 1
-            if res is None:
+            try:
+                if mode == "words":
+                    u = next(it, None)
+                    if u is None:
+                        break
+                else:
+                    u = make(mode == "mixed")
+                    if u in seen:
+                        continue
+                    seen.add(u)
+                res = await is_free(session, u)
+                checked += 1
+                if res is None:
+                    fails += 1
+                elif res:
+                    p, why = rarity(u)
+                    if p >= MIN_SCORE:
+                        nft = await is_nft(session, u)
+                        if nft is True:
+                            nftc += 1
+                            await bot.send_message(chat_id, f"💜 @{u} — NFT (Fragment, платно)\n{p}/100 · {why}")
+                        else:
+                            found += 1
+                            await bot.send_message(chat_id, f"🏆 @{u} свободен\n{p}/100 — {tier(p)} · {why}")
+                if checked == 1 or checked % 5 == 0:
+                    try:
+                        await bot.edit_message_text(f"🔎 проверено: {checked} · 🏆 {found} · 💜 {nftc} · ошибок: {fails}", chat_id, status_id, reply_markup=stopkb())
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.6)
+            except Exception:
                 fails += 1
-            elif res:
-                p, why = rarity(u)
-                if p >= MIN_SCORE:
-                    nft = await is_nft(session, u)
-                    if nft is True:
-                        nftc += 1
-                        await bot.send_message(chat_id, f"💜 @{u} — NFT (Fragment, платно)\n{p}/100 · {why}")
-                    else:
-                        found += 1
-                        await bot.send_message(chat_id, f"🏆 @{u} свободен\n{p}/100 — {tier(p)} · {why}")
-            if checked % 10 == 0:
-                try:
-                    await bot.edit_message_text(f"🔎 проверено: {checked} · 🏆 {found} · 💜 {nftc} · ошибок: {fails}", chat_id, status_id, reply_markup=stopkb())
-                except Exception:
-                    pass
-            await asyncio.sleep(0.6)
+                await asyncio.sleep(0.6)
     active[chat_id] = False
     try:
         await bot.edit_message_text(f"⏹ стоп · проверено {checked} · 🏆 {found} · 💜 {nftc}", chat_id, status_id, reply_markup=menu())
