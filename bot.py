@@ -1,7 +1,6 @@
 import asyncio
 import random
 import string
-import aiohttp
 from aiohttp import ClientSession, TCPConnector, ClientTimeout
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -12,6 +11,7 @@ OWNER = 8048285990
 ALLOWED = {OWNER, 7209594427}
 RUDE = ["иди нахуй", "не для тебя бот, вали", "тебя сюда не звали", "доступа нет, соси"]
 UA = {"User-Agent": "Mozilla/5.0"}
+HOST = "t.me"
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
@@ -20,6 +20,9 @@ watch = set()
 
 V = set("aeiou")
 GOOD = {"alpha","bravo","delta","ghost","north","raven","storm","vodka","laser","ninja","tiger","onion","mango","blaze","frost","crown","royal","queen","kings","piano","ocean","light","prime","viper","lemon","amber","ivory","pearl","noble","eagle","wolfs","brave"}
+
+def link(u):
+    return "https://" + HOST + "/" + u
 
 def new_session():
     return ClientSession(headers=UA, connector=TCPConnector(ssl=False), timeout=ClientTimeout(total=15))
@@ -79,7 +82,7 @@ def stopkb():
 
 async def is_free(session, u):
     try:
-        async with session.get(f"{{https://t.me/{u}}}", allow_redirects=True) as r:
+        async with session.get(link(u), allow_redirects=True) as r:
             html = await r.text()
     except Exception:
         return None
@@ -144,7 +147,7 @@ async def check(m: Message):
     name = parts[1].lstrip("@").lower()
     try:
         async with new_session() as s:
-            async with s.get(f"{{https://t.me/{name}}}", allow_redirects=True) as r:
+            async with s.get(link(name), allow_redirects=True) as r:
                 html = await r.text()
         if "tgme_page_title" not in html:
             p, why = rarity(name)
