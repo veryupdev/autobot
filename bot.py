@@ -76,12 +76,10 @@ def stopkb():
 async def is_free(session, u):
     try:
         async with session.get(f"{{https://t.me/{u}}}", timeout=10) as r:
-            html = (await r.text()).lower()
+            html = await r.text()
     except Exception:
         return None
-    if "tgme_page_title" in html or "tgme_page_extra" in html or "you can contact" in html:
-        return False
-    return True
+    return "tgme_page_title" not in html
 
 async def hunt(chat_id, use_digits, status_id):
     checked = found = 0
@@ -97,15 +95,16 @@ async def hunt(chat_id, use_digits, status_id):
             if res:
                 p, why = rarity(u)
                 found += 1
-                await bot.send_message(chat_id, f"@{u}\n{p}/100 — {tier(p)} · {why}")
-            if checked % 15 == 0:
+                await bot.send_message(chat_id, f"🟢 @{u}\n{p}/100 — {tier(p)} · {why}")
+            if checked % 8 == 0:
                 try:
                     await bot.edit_message_text(f"🔎 проверено: {checked} · найдено: {found}", chat_id, status_id, reply_markup=stopkb())
                 except Exception:
                     pass
-            await asyncio.sleep(0.7)
+            await asyncio.sleep(0.5)
+    tail = "свободных не нашёл 😕" if found == 0 else f"найдено: {found}"
     try:
-        await bot.edit_message_text(f"⏹ стоп · проверено {checked} · найдено {found}", chat_id, status_id, reply_markup=menu())
+        await bot.edit_message_text(f"⏹ стоп · проверено {checked} · {tail}", chat_id, status_id, reply_markup=menu())
     except Exception:
         pass
 
@@ -120,18 +119,36 @@ async def watcher():
                 await asyncio.sleep(2)
             await asyncio.sleep(15)
 
-def ok(uid):
+def okq(uid):
     return uid in ALLOWED
 
 @dp.message(Command("start"))
 async def start(m: Message):
-    if not ok(m.from_user.id):
+    if not okq(m.from_user.id):
         await m.answer(random.choice(RUDE)); return
     await m.answer("Выбери режим поиска свободных пятизнаков 👇", reply_markup=menu())
 
+@dp.message(Command("check"))
+async def check(m: Message):
+    if not okq(m.from_user.id):
+        await m.answer(random.choice(RUDE)); return
+    parts = m.text.split()
+    if len(parts) < 2:
+        await m.answer("формат: /check имя"); return
+    name = parts[1].lstrip("@").lower()
+    async with ClientSession(headers=UA) as session:
+        res = await is_free(session, name)
+    if res is None:
+        await m.answer("не смог проверить (таймаут/блок)")
+    elif res:
+        p, why = rarity(name)
+        await m.answer(f"🟢 @{name} свободен · {p}/100 — {tier(p)} · {why}")
+    else:
+        await m.answer(f"🔴 @{name} занят")
+
 @dp.message(Command("watch"))
 async def w(m: Message):
-    if not ok(m.from_user.id):
+    if not okq(m.from_user.id):
         await m.answer(random.choice(RUDE)); return
     parts = m.text.split()
     if len(parts) < 2:
@@ -141,7 +158,7 @@ async def w(m: Message):
 
 @dp.callback_query(F.data.in_({"clean", "mixed"}))
 async def go(c: CallbackQuery):
-    if not ok(c.from_user.id):
+    if not okq(c.from_user.id):
         await c.answer(random.choice(RUDE), show_alert=True); return
     if active.get(c.message.chat.id):
         await c.answer("уже идёт"); return
@@ -152,14 +169,14 @@ async def go(c: CallbackQuery):
 
 @dp.callback_query(F.data == "stop")
 async def stop(c: CallbackQuery):
-    if not ok(c.from_user.id):
+    if not okq(c.from_user.id):
         await c.answer(random.choice(RUDE), show_alert=True); return
     active[c.message.chat.id] = False
     await c.answer("останавливаю")
 
 @dp.message()
 async def other(m: Message):
-    if not ok(m.from_user.id):
+    if not okq(m.from_user.id):
         await m.answer(random.choice(RUDE))
 
 async def main():
