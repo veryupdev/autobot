@@ -112,25 +112,21 @@ def tier(p):
         return "норм"
     return "обычный"
 
-def card(u, p, why, nft=False):
+def card(u, p, why):
     url = HOST + "/" + u
-    tag = "💜 NFT (Fragment, платно)\n\n" if nft else ""
     if p >= 90:
-        return (tag +
-                "🏆━━━━━━━━━━━━🏆\n"
+        return ("🏆━━━━━━━━━━━━🏆\n"
                 "      <b>✨ ЛЕГЕНДА ✨</b>\n"
                 "🏆━━━━━━━━━━━━🏆\n\n"
                 f"<b>@{u}</b>\n"
                 f"💯 <b>{p}/100</b> · {why}\n"
                 f"🔗 {url}")
     if p >= 75:
-        return (tag +
-                "🔥🔥🔥 <b>ТОП</b> 🔥🔥🔥\n\n"
+        return ("🔥🔥🔥 <b>ТОП</b> 🔥🔥🔥\n\n"
                 f"<b>@{u}</b>\n"
                 f"⭐ <b>{p}/100</b> · {why}\n"
                 f"🔗 {url}")
-    return (tag +
-            f"💎 <b>@{u}</b> — редкий\n"
+    return (f"💎 <b>@{u}</b> — редкий\n"
             f"{p}/100 · {why}\n"
             f"🔗 {url}")
 
@@ -200,18 +196,17 @@ async def hunt(chat_id, mode, status_id):
                         nft = await is_nft(session, u)
                         if nft is True:
                             nftc += 1
-                            await bot.send_message(chat_id, card(u, p, why, nft=True), parse_mode="HTML")
                         else:
                             found += 1
                             await bot.send_message(chat_id, card(u, p, why), parse_mode="HTML")
                 if checked == 1 or checked % 4 == 0:
-                    await set_status(chat_id, status_id, f"🔎 проверено: {checked} · 🏆 {found} · 💜 {nftc} · ошибок: {fails}", stopkb())
+                    await set_status(chat_id, status_id, f"🔎 проверено: {checked} · 🏆 {found} · 💜 отсеяно: {nftc} · ошибок: {fails}", stopkb())
                 await asyncio.sleep(0.6)
             except Exception:
                 fails += 1
                 await asyncio.sleep(0.6)
     active[chat_id] = False
-    await set_status(chat_id, status_id, f"⏹ стоп · проверено {checked} · 🏆 {found} · 💜 {nftc}", menu())
+    await set_status(chat_id, status_id, f"⏹ стоп · проверено {checked} · 🏆 {found} · 💜 отсеяно {nftc}", menu())
 
 async def watcher():
     async with new_session() as session:
@@ -231,7 +226,7 @@ def okq(uid):
 async def start(m: Message):
     if not okq(m.from_user.id):
         await m.answer(random.choice(RUDE)); return
-    await m.answer(f"Свободные пятизнаки. Шлю только рейтинг ≥ {MIN_SCORE}. Выбери режим 👇", reply_markup=menu())
+    await m.answer(f"Свободные пятизнаки. Шлю только рейтинг ≥ {MIN_SCORE}, NFT отсеиваются. Выбери режим 👇", reply_markup=menu())
 
 @dp.message(Command("check"))
 async def check(m: Message):
@@ -249,7 +244,10 @@ async def check(m: Message):
             await m.answer(f"🔴 @{name} занят"); return
         nft = await is_nft(s, name)
     p, why = rarity(name)
-    await m.answer(card(name, p, why, nft=bool(nft)), parse_mode="HTML")
+    if nft:
+        await m.answer(f"💜 @{name} — NFT на Fragment (только платно)\n{p}/100 · {why}")
+    else:
+        await m.answer(card(name, p, why), parse_mode="HTML")
 
 @dp.message(Command("watch"))
 async def w(m: Message):
