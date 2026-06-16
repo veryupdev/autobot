@@ -12,7 +12,7 @@ OWNER = 8048285990
 ALLOWED = {OWNER, 7209594427}
 RUDE = ["иди нахуй", "не для тебя бот, вали", "тебя сюда не звали", "доступа нет, соси"]
 UA = {"User-Agent": "Mozilla/5.0"}
-MIN_SCORE = 1
+MIN_SCORE = 60
 
 HOST = "t.me"
 FRAG_HOST = "fragment.com"
